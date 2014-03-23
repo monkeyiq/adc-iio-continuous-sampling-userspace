@@ -18,6 +18,7 @@
  *
  */
 
+
 #define _GNU_SOURCE
 
 #include <unistd.h>
@@ -34,6 +35,10 @@
 #include <getopt.h>
 #include <inttypes.h>
 #include "iio_utils.h"
+
+#ifndef max
+       #define max(x,y) ((x) > (y) ? (x) : (y))
+#endif
 
 /**
  * size_from_channelarray() - calculate the storage size of a scan
@@ -287,14 +292,34 @@ int main(int argc, char **argv)
 	}
 
 	/* Wait for events 10 times */
-	for (j = 0; j < num_loops; j++) {
+	for (j = 0; j < num_loops; ) {
+		printf("wait__ %d %d\n", j, num_loops );
 		if (!noevents) {
-			struct pollfd pfd = {
-				.fd = fp,
-				.events = POLLIN,
-			};
 
-			poll(&pfd, 1, -1);
+            struct timeval tv;
+            tv.tv_sec = 0;
+            tv.tv_usec = 0;
+            int nfds = 0;
+            fd_set readfds, writefds, exceptfds;
+            int r;
+            FD_ZERO(&readfds);
+            FD_ZERO(&writefds);
+            FD_ZERO(&exceptfds);
+
+            FD_SET(fp, &readfds);
+            nfds = max( fp, nfds );
+            r =  select( nfds+1, &readfds, &writefds, &exceptfds, &tv );
+
+            if( !r )
+            {
+                nfds = 0;
+                FD_ZERO(&readfds);
+                FD_SET(fp, &readfds);
+                nfds = max( fp, nfds );
+                r = select( nfds+1, &readfds, &writefds, &exceptfds, 0 );
+                j++;
+            }
+            
 			toread = buf_len;
 
 		} else {
@@ -309,6 +334,7 @@ int main(int argc, char **argv)
 			printf("nothing available\n");
 			continue;
 		}
+		printf(" rs %d ss %d\n", read_size, scan_size );
 		for (i = 0; i < read_size/scan_size; i++)
 			process_scan(data + scan_size*i,
 				     channels,
